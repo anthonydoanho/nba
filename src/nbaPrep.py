@@ -91,9 +91,7 @@ if __name__ == '__main__':
 	
 	draft = NBAPrep(inputs['target'], inputs['draftYearTest'], inputs['seasonsTest'], inputs['measurementCols'], inputs['spotShootingCols'], inputs['nonStationaryShootingCols'])
 	players = draft.players()
-	measurements = draft.measurements()
-	spotShooting = draft.spotShooting()
-	nonStationaryShooting = draft.nonStationaryShooting()
+	measurements, spotShooting, nonStationaryShooting = draft.combine()
 	df = draft.merging(players, measurements, spotShooting, nonStationaryShooting)
 	
 	y_test = df['MIN']
