@@ -1,7 +1,9 @@
 {
 	"target" : "MIN",
-	"draftYear" : 2018,
-	"seasons" : ["2021-22", "2022-23", "2023-24"],
+	"draftYear" : [2013, 2014, 2015, 2016, 2018],
+	"seasons" : [["2016-17", "2017-18", "2018-19"], ["2017-18", "2018-19", "2019-20"], ["2018-19", "2019-20", "2020-21"], ["2019-20", "2020-21", "2021-22"], ["2021-22", "2022-23", "2023-24"]],
+	"draftYearTest" : 2017,
+	"seasonsTest" : ["2020-21", "2021-22", "2022-23"],
 	"spotShootingCols" : ["FIFTEEN_CORNER_LEFT_MADE", 
 						"FIFTEEN_CORNER_LEFT_ATTEMPT", 
 						"FIFTEEN_CORNER_LEFT_PCT", 
