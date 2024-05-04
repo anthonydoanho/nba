@@ -43,7 +43,7 @@ class NBAPrep:
 		spotShooting = pd.DataFrame()
 		nonStationaryShooting = pd.DataFrame()
 		for year in self.draft: 
-			print(year)
+			print('Pulling data for draft: ' + str(year))
 			m = draftcombinestats.DraftCombineStats(season_all_time = year).get_data_frames()[0]
 			m['DRAFT_CLASS'] = year
 			time.sleep(0.6)
@@ -74,6 +74,8 @@ class NBAPrep:
 		df = pd.merge(df, playersSum[['PLAYER_ID', 'DRAFT_CLASS', self.target]], on=['PLAYER_ID', 'DRAFT_CLASS'], how='left').sort_values(by= self.target, ascending=False)
 
 		df['MIN'] = df['MIN'].fillna(0)
+
+		df = df.dropna(how='all', axis=1)
 
 		return df
 
