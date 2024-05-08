@@ -1,3 +1,6 @@
+lightgbm
+matplotlib
 nba_api
 pandas
 scikit-learn
+xgboost

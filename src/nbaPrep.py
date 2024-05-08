@@ -1,6 +1,9 @@
 import json
 import pandas as pd
+from sklearn.decomposition import PCA
 from sklearn.linear_model import LinearRegression
+import xgboost as xgb
+import lightgbm as lgb
 import time
 
 from nba_api.stats.endpoints import draftcombinespotshooting 
@@ -79,6 +82,27 @@ class NBAPrep:
 
 		return df
 
+	def featureImportance(self, X_train, y_train):
+
+		xgb_regressor = xgb.XGBRegressor(random_state=42)
+		xgb_regressor.fit(X_train, y_train)
+
+		xgb_feature_importances = xgb_regressor.feature_importances_
+		xgb_feature_importance_df = pd.DataFrame({'Feature': X_train.columns, 'Importance': xgb_feature_importances})
+		xgb_feature_importance_df = xgb_feature_importance_df.sort_values(by='Importance', ascending=False)
+		print("XGBoost Feature Importance:")
+		print(xgb_feature_importance_df)
+
+		lgb_regressor = lgb.LGBMRegressor(random_state=42)
+		lgb_regressor.fit(X_train, y_train)
+
+		lgb_feature_importances = lgb_regressor.feature_importances_
+		lgb_feature_importance_df = pd.DataFrame({'Feature': X_train.columns, 'Importance': lgb_feature_importances})
+		lgb_feature_importance_df = lgb_feature_importance_df.sort_values(by='Importance', ascending=False)
+		print("\nLightGBM Feature Importance:")
+		print(lgb_feature_importance_df)
+		import pdb; pdb.set_trace()
+
 if __name__ == '__main__':
 	with open('src/inputs.json', "r") as f:
 		inputs = json.load(f)
@@ -90,7 +114,8 @@ if __name__ == '__main__':
 	
 	y_train = df['MIN']
 	X_train = df.drop(['PLAYER_ID', 'MIN', 'FIRST_NAME', 'LAST_NAME'], axis=1)
-	
+	draft.featureImportance(X_train, y_train)
+
 	draft = NBAPrep(inputs['target'], inputs['draftYearTest'], inputs['seasonsTest'], inputs['measurementCols'], inputs['spotShootingCols'], inputs['nonStationaryShootingCols'])
 	players = draft.players()
 	measurements, spotShooting, nonStationaryShooting = draft.combine()
