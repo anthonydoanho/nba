@@ -13,13 +13,14 @@ from nba_api.stats.endpoints import draftcombineplayeranthro
 from nba_api.stats.endpoints import leagueleaders
 
 class NBAPrep:
-	def __init__(self, target, draftYear, seasons, measurementCols, spotShootingCols, nonStationaryShootingCols):
+	def __init__(self, target, draftYear, seasons, measurementCols, spotShootingCols, nonStationaryShootingCols, dropCols):
 		self.target = target
 		self.draft = draftYear
 		self.years = seasons
 		self.measurementCols = measurementCols
 		self.spotShootingCols = spotShootingCols
 		self.nonStationaryShootingCols = nonStationaryShootingCols
+		self.dropCols = dropCols
 	
 	def players(self):
 		playersSum = pd.DataFrame()
@@ -82,6 +83,12 @@ class NBAPrep:
 
 		return df
 
+	def drop(self, df, dropCols):
+		# drop cols are selected from previous feature importance analyses
+		df = df.drop(dropCols, axis=1)
+
+		return df
+
 	def featureImportance(self, X_train, y_train):
 
 		xgb_regressor = xgb.XGBRegressor(random_state=42)
@@ -93,34 +100,38 @@ class NBAPrep:
 		print("XGBoost Feature Importance:")
 		print(xgb_feature_importance_df)
 
-		lgb_regressor = lgb.LGBMRegressor(random_state=42)
-		lgb_regressor.fit(X_train, y_train)
+		# lgb_regressor = lgb.LGBMRegressor(random_state=42)
+		# lgb_regressor.fit(X_train, y_train)
 
-		lgb_feature_importances = lgb_regressor.feature_importances_
-		lgb_feature_importance_df = pd.DataFrame({'Feature': X_train.columns, 'Importance': lgb_feature_importances})
-		lgb_feature_importance_df = lgb_feature_importance_df.sort_values(by='Importance', ascending=False)
-		print("\nLightGBM Feature Importance:")
-		print(lgb_feature_importance_df)
-		import pdb; pdb.set_trace()
+		# lgb_feature_importances = lgb_regressor.feature_importances_
+		# lgb_feature_importance_df = pd.DataFrame({'Feature': X_train.columns, 'Importance': lgb_feature_importances})
+		# lgb_feature_importance_df = lgb_feature_importance_df.sort_values(by='Importance', ascending=False)
+		# print("\nLightGBM Feature Importance:")
+		# print(lgb_feature_importance_df)
+		# import pdb; pdb.set_trace()
 
 if __name__ == '__main__':
 	with open('src/inputs.json', "r") as f:
 		inputs = json.load(f)
 
-	draft = NBAPrep(inputs['target'], inputs['draftYear'], inputs['seasons'], inputs['measurementCols'], inputs['spotShootingCols'], inputs['nonStationaryShootingCols'])
+	draft = NBAPrep(inputs['target'], inputs['draftYear'], inputs['seasons'], inputs['measurementCols']
+		, inputs['spotShootingCols'], inputs['nonStationaryShootingCols'], inputs['dropCols'])
 	players = draft.players()
 	measurements, spotShooting, nonStationaryShooting = draft.combine()
 	df = draft.merging(players, measurements, spotShooting, nonStationaryShooting)
+	df = draft.drop(df, draft.dropCols)
 	
 	y_train = df['MIN']
 	X_train = df.drop(['PLAYER_ID', 'MIN', 'FIRST_NAME', 'LAST_NAME'], axis=1)
 	draft.featureImportance(X_train, y_train)
 
-	draft = NBAPrep(inputs['target'], inputs['draftYearTest'], inputs['seasonsTest'], inputs['measurementCols'], inputs['spotShootingCols'], inputs['nonStationaryShootingCols'])
+	draft = NBAPrep(inputs['target'], inputs['draftYearTest'], inputs['seasonsTest'], inputs['measurementCols']
+		, inputs['spotShootingCols'], inputs['nonStationaryShootingCols'], inputs['dropCols'])
 	players = draft.players()
 	measurements, spotShooting, nonStationaryShooting = draft.combine()
 	df = draft.merging(players, measurements, spotShooting, nonStationaryShooting)
-	
+	df = draft.drop(df, draft.dropCols)
+
 	y_test = df['MIN']
 	X_test = df.drop(['PLAYER_ID', 'MIN', 'FIRST_NAME', 'LAST_NAME'], axis=1)
 	
