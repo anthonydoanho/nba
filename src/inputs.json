@@ -1,4 +1,5 @@
 {
+	"testTrainSplit" : 0.33,
 	"target" : "MIN",
 	"draftYear" : [2013, 2014, 2015, 2016, 2017, 2018],
 	"seasons" : [["2016-17", "2017-18", "2018-19"], ["2017-18", "2018-19", "2019-20"], ["2018-19", "2019-20", "2020-21"], ["2019-20", "2020-21", "2021-22"], ["2020-21", "2021-22", "2022-23"], ["2021-22", "2022-23", "2023-24"]],
@@ -59,6 +60,9 @@
 		"STANDING_VERTICAL_LEAP", "MAX_VERTICAL_LEAP", "LANE_AGILITY_TIME", "MODIFIED_LANE_AGILITY_TIME", "THREE_QUARTER_SPRINT"
 ],
 	"dropCols" : [
+		"PLAYER_ID",
+		"FIRST_NAME",
+		"LAST_NAME",
 		"DRAFT_CLASS",
 		"HEIGHT_WO_SHOES",
 		"NBA_CORNER_RIGHT_ATTEMPT", 
