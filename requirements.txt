@@ -3,4 +3,5 @@ matplotlib
 nba_api
 pandas
 scikit-learn
+seaborn
 xgboost
