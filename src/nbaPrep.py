@@ -1,8 +1,10 @@
 import json
+import matplotlib.pyplot as plt
 import pandas as pd
+import seaborn as sns
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV
 import xgboost as xgb
 import lightgbm as lgb
 import time
@@ -14,15 +16,19 @@ from nba_api.stats.endpoints import draftcombineplayeranthro
 from nba_api.stats.endpoints import leagueleaders
 
 class NBAPrep:
-	def __init__(self, target, draftYear, seasons, measurementCols, spotShootingCols, nonStationaryShootingCols, dropCols, testTrainSplit):
-		self.target = target
-		self.draft = draftYear
-		self.years = seasons
-		self.measurementCols = measurementCols
-		self.spotShootingCols = spotShootingCols
-		self.nonStationaryShootingCols = nonStationaryShootingCols
-		self.dropCols = dropCols
-		self.testTrainSplit = testTrainSplit
+	def __init__(self, jsonFile):
+		with open(jsonFile, "r") as f:
+			inputs = json.load(f)
+
+		self.target = inputs['target']
+		self.draft = inputs['draftYear']
+		self.years = inputs['seasons']
+		self.measurementCols = inputs['measurementCols']
+		self.spotShootingCols = inputs['spotShootingCols']
+		self.nonStationaryShootingCols = inputs['nonStationaryShootingCols']
+		self.dropCols = inputs['dropCols']
+		self.testTrainSplit = inputs['testTrainSplit']
+		self.xgbParams = inputs['xgbParamsGridSearch'] 
 	
 	def players(self):
 		playersSum = pd.DataFrame()
@@ -49,7 +55,7 @@ class NBAPrep:
 		spotShooting = pd.DataFrame()
 		nonStationaryShooting = pd.DataFrame()
 		for year in self.draft: 
-			print('Pulling data for draft: ' + str(year))
+			print('Pulling data for ' + str(year) + ' draft' )
 			m = draftcombinestats.DraftCombineStats(season_all_time = year).get_data_frames()[0]
 			m['DRAFT_CLASS'] = year
 			time.sleep(0.6)
@@ -94,7 +100,16 @@ class NBAPrep:
 	def splits(self, df, target, testTrainSplit):
 		y = df[target]
 		X = df.drop(target, axis=1)
-		X_train, y_train, X_test, y_test = train_test_split(X, y, test_size=testTrainSplit, random_state=42)
+		#corrMatrix = X.corr()
+		#axis_corr = sns.heatmap(
+		#corrMatrix,
+		#vmin=-1, vmax=1, center=0,
+		#cmap=sns.diverging_palette(50, 500, n=500),
+		#square=True
+		#)
+
+		#plt.show()
+		X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=testTrainSplit, random_state=42)
 
 		return X_train, X_test, y_train, y_test
 
@@ -119,30 +134,27 @@ class NBAPrep:
 		#print(lgb_feature_importance_df)
 		#import pdb; pdb.set_trace()
 
+	def train(self, X_train, y_train):
+		model = xgb.XGBRegressor()
+		reg_cv = GridSearchCV(model, {
+			'colsample_bytree':self.xgbParams['params']['colsample_bytree'], 
+			'max_depth':self.xgbParams['params']['max_depth'],
+			'min_child_weight':self.xgbParams['params']['min_child_weight'], 
+			'n_estimators':self.xgbParams['params']['n_estimators'],
+			})
+		reg_cv.fit(X_train, y_train)
+		import pdb; pdb.set_trace()
+
 if __name__ == '__main__':
-	with open('src/inputs.json', "r") as f:
-		inputs = json.load(f)
-
-	draft = NBAPrep(inputs['target'], inputs['draftYear'], inputs['seasons'], inputs['measurementCols']
-		, inputs['spotShootingCols'], inputs['nonStationaryShootingCols'], inputs['dropCols'], inputs['testTrainSplit'])
+	jsonFile = 'src/inputs.json'
+	draft = NBAPrep(jsonFile)
+	
 	measurements, spotShooting, nonStationaryShooting = draft.combine()
 	players = draft.players()
 	df = draft.merging(players, measurements, spotShooting, nonStationaryShooting)
 	df = draft.drop(df, draft.dropCols)
 	
-	X_train, y_train, X_test, y_test = draft.splits(df, draft.target, draft.testTrainSplit)
-	import pdb; pdb.set_trace()
-	draft.featureImportance(X_train, y_train)
+	X_train, X_test, y_train, y_test = draft.splits(df, draft.target, draft.testTrainSplit)
+	# draft.featureImportance(X_train, y_train)
 
-	draft = NBAPrep(inputs['target'], inputs['draftYearTest'], inputs['seasonsTest'], inputs['measurementCols']
-		, inputs['spotShootingCols'], inputs['nonStationaryShootingCols'], inputs['dropCols'])
-	players = draft.players()
-	measurements, spotShooting, nonStationaryShooting = draft.combine()
-	df = draft.merging(players, measurements, spotShooting, nonStationaryShooting)
-	df = draft.drop(df, draft.dropCols)
-
-	y_test = df['MIN']
-	X_test = df.drop(['PLAYER_ID', 'MIN', 'FIRST_NAME', 'LAST_NAME'], axis=1)
-	
-	model = LinearRegression(alpha=1e-2).fit(X_train, y_train)
-	model.score(X_test, y_test)
+	draft.train(X_train, y_train)

@@ -1,5 +1,6 @@
 {
 	"testTrainSplit" : 0.33,
+	"xgbParamsGridSearch" : {"params" : {"colsample_bytree":[0.8,1.0], "eta":0.1, "gamma":0, "max_depth":[3,4,6], "min_child_weight":[1.0,1.2], "n_estimators":[500,1000], "nthread":4, "objective":"binary:logistic", "scale_pos_weight":1, "seed":27, "subsample":0.8} },
 	"target" : "MIN",
 	"draftYear" : [2013, 2014, 2015, 2016, 2017, 2018],
 	"seasons" : [["2016-17", "2017-18", "2018-19"], ["2017-18", "2018-19", "2019-20"], ["2018-19", "2019-20", "2020-21"], ["2019-20", "2020-21", "2021-22"], ["2020-21", "2021-22", "2022-23"], ["2021-22", "2022-23", "2023-24"]],
@@ -65,6 +66,7 @@
 		"LAST_NAME",
 		"DRAFT_CLASS",
 		"HEIGHT_WO_SHOES",
+		"STANDING_REACH",
 		"NBA_CORNER_RIGHT_ATTEMPT", 
 		"NBA_CORNER_RIGHT_PCT", 
 		"NBA_BREAK_RIGHT_ATTEMPT", 
