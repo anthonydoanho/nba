@@ -4,6 +4,7 @@ import pandas as pd
 import seaborn as sns
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 from sklearn.model_selection import train_test_split, GridSearchCV
 import xgboost as xgb
 import lightgbm as lgb
@@ -134,15 +135,38 @@ class NBAPrep:
 		#print(lgb_feature_importance_df)
 		#import pdb; pdb.set_trace()
 
-	def train(self, X_train, y_train):
+	def train(self, dfPlayers, X_train, y_train, X_test, y_test):
 		model = xgb.XGBRegressor()
+		print('Performing grid search')
 		reg_cv = GridSearchCV(model, {
+			'eta':self.xgbParams['params']['eta'],
 			'colsample_bytree':self.xgbParams['params']['colsample_bytree'], 
+			'gamma':self.xgbParams['params']['gamma'],
 			'max_depth':self.xgbParams['params']['max_depth'],
 			'min_child_weight':self.xgbParams['params']['min_child_weight'], 
 			'n_estimators':self.xgbParams['params']['n_estimators'],
+			'nthread':self.xgbParams['params']['nthread'],
+			'objective':self.xgbParams['params']['objective'],
+			'reg_alpha':self.xgbParams['params']['reg_alpha'],
+			'reg_lambda':self.xgbParams['params']['reg_lambda'],
+			'scale_pos_weight':self.xgbParams['params']['scale_pos_weight'],
+			'subsample':self.xgbParams['params']['subsample'],
+			'seed':self.xgbParams['params']['seed'],
 			})
+		print("Training gridsearch")
 		reg_cv.fit(X_train, y_train)
+		print(reg_cv.best_params_)
+		model = xgb.XGBRegressor(**reg_cv.best_params_)
+		model.fit(X_train, y_train)
+		predictions = model.predict(X_test)
+		print("Predicting")
+		mse = mean_squared_error(y_test, predictions)
+		mae = mean_absolute_error(y_test, predictions)
+		print('mse: ' + str(mse) + ', mae: ' + str(mae))
+		test = pd.DataFrame({'y_test':y_test, 'predictions':predictions})
+		merged = dfPlayers.merge(test, how='inner', left_index=True, right_index=True)
+		merged['absDiff'] = abs(merged['y_test'] - merged['predictions'])
+		merged = merged.sort_values(by='predictions', ascending=False)
 		import pdb; pdb.set_trace()
 
 if __name__ == '__main__':
@@ -152,9 +176,10 @@ if __name__ == '__main__':
 	measurements, spotShooting, nonStationaryShooting = draft.combine()
 	players = draft.players()
 	df = draft.merging(players, measurements, spotShooting, nonStationaryShooting)
+	dfPlayers = df[['PLAYER_ID', 'FIRST_NAME', 'LAST_NAME']]
 	df = draft.drop(df, draft.dropCols)
 	
 	X_train, X_test, y_train, y_test = draft.splits(df, draft.target, draft.testTrainSplit)
 	# draft.featureImportance(X_train, y_train)
 
-	draft.train(X_train, y_train)
+	draft.train(dfPlayers, X_train, y_train, X_test, y_test)
