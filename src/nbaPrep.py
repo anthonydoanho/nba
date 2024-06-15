@@ -98,21 +98,39 @@ class NBAPrep:
 
 		return df
 
-	def splits(self, df, target, testTrainSplit):
-		y = df[target]
-		X = df.drop(target, axis=1)
-		#corrMatrix = X.corr()
-		#axis_corr = sns.heatmap(
-		#corrMatrix,
-		#vmin=-1, vmax=1, center=0,
-		#cmap=sns.diverging_palette(50, 500, n=500),
-		#square=True
-		#)
+	def positions(self, df):
+		# split players based on 'HEIGHT_W_SHOES'
+		
+		df_1 = df[df['HEIGHT_W_SHOES'] < 78]
+		df_2 = df[(df['HEIGHT_W_SHOES'] >= 78) & (df['HEIGHT_W_SHOES'] < 82)]
+		df_3 = df[df['HEIGHT_W_SHOES'] >= 82]
 
-		#plt.show()
-		X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=testTrainSplit, random_state=42)
+		dfList = [df_1, df_2, df_3]
 
-		return X_train, X_test, y_train, y_test
+		return dfList
+
+	def splits(self, dfList, target, testTrainSplit):
+		X_trainList, X_testList = [], []
+		y_trainList, y_testList = [], []
+		for df in dfList:
+			y = df[target]
+			X = df.drop(target, axis=1)
+			#corrMatrix = X.corr()
+			#axis_corr = sns.heatmap(
+			#corrMatrix,
+			#vmin=-1, vmax=1, center=0,
+			#cmap=sns.diverging_palette(50, 500, n=500),
+			#square=True
+			#)
+
+			#plt.show()
+			X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=testTrainSplit, random_state=42)
+			X_trainList.append(X_train)
+			X_testList.append(X_test)
+			y_trainList.append(y_train)
+			y_testList.append(y_test)
+
+		return X_trainList, X_testList, y_trainList, y_testList
 
 	def featureImportance(self, X_train, y_train):
 
@@ -135,38 +153,39 @@ class NBAPrep:
 		#print(lgb_feature_importance_df)
 		#import pdb; pdb.set_trace()
 
-	def train(self, dfPlayers, X_train, y_train, X_test, y_test):
+	def train(self, dfPlayers, X_trainList, y_trainList, X_testList, y_testList):
 		model = xgb.XGBRegressor()
-		print('Performing grid search')
-		reg_cv = GridSearchCV(model, {
-			'eta':self.xgbParams['params']['eta'],
-			'colsample_bytree':self.xgbParams['params']['colsample_bytree'], 
-			'gamma':self.xgbParams['params']['gamma'],
-			'max_depth':self.xgbParams['params']['max_depth'],
-			'min_child_weight':self.xgbParams['params']['min_child_weight'], 
-			'n_estimators':self.xgbParams['params']['n_estimators'],
-			'nthread':self.xgbParams['params']['nthread'],
-			'objective':self.xgbParams['params']['objective'],
-			'reg_alpha':self.xgbParams['params']['reg_alpha'],
-			'reg_lambda':self.xgbParams['params']['reg_lambda'],
-			'scale_pos_weight':self.xgbParams['params']['scale_pos_weight'],
-			'subsample':self.xgbParams['params']['subsample'],
-			'seed':self.xgbParams['params']['seed'],
-			})
-		print("Training gridsearch")
-		reg_cv.fit(X_train, y_train)
-		print(reg_cv.best_params_)
-		model = xgb.XGBRegressor(**reg_cv.best_params_)
-		model.fit(X_train, y_train)
-		predictions = model.predict(X_test)
-		print("Predicting")
-		mse = mean_squared_error(y_test, predictions)
-		mae = mean_absolute_error(y_test, predictions)
-		print('mse: ' + str(mse) + ', mae: ' + str(mae))
-		test = pd.DataFrame({'y_test':y_test, 'predictions':predictions})
-		merged = dfPlayers.merge(test, how='inner', left_index=True, right_index=True)
-		merged['absDiff'] = abs(merged['y_test'] - merged['predictions'])
-		merged = merged.sort_values(by='predictions', ascending=False)
+		for i, position  in enumerate(['Guards', 'Forwards', 'Centers']):
+			print('Performing grid search on ' + position)
+			reg_cv = GridSearchCV(model, {
+				'eta':self.xgbParams['params' + position]['eta'],
+				'colsample_bytree':self.xgbParams['params' + position]['colsample_bytree'], 
+				'gamma':self.xgbParams['params' + position]['gamma'],
+				'max_depth':self.xgbParams['params' + position]['max_depth'],
+				'min_child_weight':self.xgbParams['params' + position]['min_child_weight'], 
+				'n_estimators':self.xgbParams['params' + position]['n_estimators'],
+				'nthread':self.xgbParams['params' + position]['nthread'],
+				'objective':self.xgbParams['params' + position]['objective'],
+				'reg_alpha':self.xgbParams['params' + position]['reg_alpha'],
+				'reg_lambda':self.xgbParams['params' + position]['reg_lambda'],
+				'scale_pos_weight':self.xgbParams['params' + position]['scale_pos_weight'],
+				'subsample':self.xgbParams['params' + position]['subsample'],
+				'seed':self.xgbParams['params' + position]['seed'],
+				})
+			print("Training gridsearch")
+			reg_cv.fit(X_trainList[i], y_trainList[i])
+			print(reg_cv.best_params_)
+			model = xgb.XGBRegressor(**reg_cv.best_params_)
+			model.fit(X_trainList[i], y_trainList[i])
+			predictions = model.predict(X_testList[i])
+			print("Predicting " + position)
+			mse = mean_squared_error(y_testList[i], predictions)
+			mae = mean_absolute_error(y_testList[i], predictions)
+			print('mse: ' + str(mse) + ', mae: ' + str(mae))
+			test = pd.DataFrame({'y_test':y_testList[i], 'predictions':predictions})
+			merged = dfPlayers.merge(test, how='inner', left_index=True, right_index=True)
+			merged['absDiff'] = abs(merged['y_test'] - merged['predictions'])
+			merged = merged.sort_values(by='predictions', ascending=False)
 		import pdb; pdb.set_trace()
 
 if __name__ == '__main__':
@@ -179,7 +198,9 @@ if __name__ == '__main__':
 	dfPlayers = df[['PLAYER_ID', 'FIRST_NAME', 'LAST_NAME']]
 	df = draft.drop(df, draft.dropCols)
 	
-	X_train, X_test, y_train, y_test = draft.splits(df, draft.target, draft.testTrainSplit)
+	dfList = draft.positions(df)
+
+	X_trainList, X_testList, y_trainList, y_testList = draft.splits(dfList, draft.target, draft.testTrainSplit)
 	# draft.featureImportance(X_train, y_train)
 
-	draft.train(dfPlayers, X_train, y_train, X_test, y_test)
+	draft.train(dfPlayers, X_trainList, y_trainList, X_testList, y_testList)
