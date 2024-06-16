@@ -186,7 +186,6 @@ class NBAPrep:
 			merged = dfPlayers.merge(test, how='inner', left_index=True, right_index=True)
 			merged['absDiff'] = abs(merged['y_test'] - merged['predictions'])
 			merged = merged.sort_values(by='predictions', ascending=False)
-		import pdb; pdb.set_trace()
 
 if __name__ == '__main__':
 	jsonFile = 'src/inputs.json'
