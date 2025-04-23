@@ -1,14 +1,17 @@
 import json
+import lightgbm as lgb
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
+import time
+import xgboost as xgb
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from sklearn.model_selection import train_test_split, GridSearchCV
-import xgboost as xgb
-import lightgbm as lgb
-import time
+
+import pandasCleanup as pc
 
 from nba_api.stats.endpoints import draftcombinespotshooting 
 from nba_api.stats.endpoints import draftcombinenonstationaryshooting 
@@ -45,7 +48,7 @@ class NBAPrep:
 					,per_mode48='Totals'
 				).get_data_frames()[0]
 				players = pd.concat((players, stats)) 
-			players = players.groupby(by='PLAYER_ID', as_index=False).sum()
+			players = players.groupby(by=['PLAYER_ID', 'PLAYER'], as_index=False).sum()
 			players['DRAFT_CLASS'] = self.draft[i]
 			playersSum = pd.concat((playersSum, players))
 		
@@ -63,11 +66,16 @@ class NBAPrep:
 			s = draftcombinespotshooting.DraftCombineSpotShooting(season_year = year).get_data_frames()[0]
 			time.sleep(0.6)
 			n = draftcombinenonstationaryshooting.DraftCombineNonStationaryShooting(season_year = self.draft).get_data_frames()[0]
-			time.sleep(0.6)
+			# time.sleep(0.6)
 			measurements = pd.concat((measurements, m))
 			spotShooting = pd.concat((spotShooting, s))
 			nonStationaryShooting = pd.concat((nonStationaryShooting, n))
 
+		y = pc.pandasCleanup(measurements)
+		measurements = y.main()
+		import pdb; pdb.set_trace()
+		measurements['WEIGHT'] = measurements['WEIGHT'].replace('', None)
+		measurements = measurements.replace(np.nan, None)
 		measurements = measurements[measurements['WEIGHT'] != ''] # weight is not blank
 		measurements['WEIGHT'] = measurements['WEIGHT'].astype(float)
 		draftPlayers = measurements[['PLAYER_ID', 'DRAFT_CLASS'] + self.measurementCols].sort_values(by='PLAYER_ID', ascending=False)
@@ -86,6 +94,7 @@ class NBAPrep:
 		df.loc[df['PLAYER_ID']==2006, 'PLAYER_ID'] = 1626204 # Correcting Larry Nance's PLAYER_ID
 		df = pd.merge(df, playersSum[['PLAYER_ID', 'DRAFT_CLASS', self.target]], on=['PLAYER_ID', 'DRAFT_CLASS'], how='left').sort_values(by= self.target, ascending=False)
 
+		import pdb; pdb.set_trace()
 		df['MIN'] = df['MIN'].fillna(0)
 
 		df = df.dropna(how='all', axis=1)
@@ -188,6 +197,8 @@ class NBAPrep:
 			merged = merged.sort_values(by='predictions', ascending=False)
 
 if __name__ == '__main__':
+	pd.set_option('display.max_columns', None)
+	pd.set_option('display.max_rows', None)
 	jsonFile = 'src/inputs.json'
 	draft = NBAPrep(jsonFile)
 	
