@@ -16,7 +16,6 @@ class pandasCleanup:
 				self.df[col] = self.df[col].replace(np.nan, None)
 			# elif self.df[col].dtype in ['int64', 'float64']:
 			# 	self.df[col] = self.df[col].replace(None, np.nan)
-		# return self.df
 
 	def newType(self, col, newType):
 		self.df[col] = self.df[col].astype(newType)

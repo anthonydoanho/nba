@@ -73,11 +73,6 @@ class NBAPrep:
 
 		y = pc.pandasCleanup(measurements)
 		measurements = y.main()
-		import pdb; pdb.set_trace()
-		measurements['WEIGHT'] = measurements['WEIGHT'].replace('', None)
-		measurements = measurements.replace(np.nan, None)
-		measurements = measurements[measurements['WEIGHT'] != ''] # weight is not blank
-		measurements['WEIGHT'] = measurements['WEIGHT'].astype(float)
 		draftPlayers = measurements[['PLAYER_ID', 'DRAFT_CLASS'] + self.measurementCols].sort_values(by='PLAYER_ID', ascending=False)
 		
 		spotShootingTrunc = spotShooting[['PLAYER_ID'] + self.spotShootingCols]
