@@ -24,15 +24,16 @@ class NBAPrep:
 		with open(jsonFile, "r") as f:
 			inputs = json.load(f)
 
-		self.target = inputs['target']
 		self.draft = inputs['draftYear']
-		self.years = inputs['seasons']
-		self.measurementCols = inputs['measurementCols']
-		self.spotShootingCols = inputs['spotShootingCols']
-		self.nonStationaryShootingCols = inputs['nonStationaryShootingCols']
 		self.dropCols = inputs['dropCols']
+		self.measurementCols = inputs['measurementCols']
+		self.measurementColsFix = inputs['measurementColsFix']
+		self.nonStationaryShootingCols = inputs['nonStationaryShootingCols']
+		self.spotShootingCols = inputs['spotShootingCols']
+		self.target = inputs['target']
 		self.testTrainSplit = inputs['testTrainSplit']
 		self.xgbParams = inputs['xgbParamsGridSearch'] 
+		self.years = inputs['seasons']
 	
 	def players(self):
 		playersSum = pd.DataFrame()
@@ -64,28 +65,28 @@ class NBAPrep:
 			m['DRAFT_CLASS'] = year
 			time.sleep(0.6)
 			s = draftcombinespotshooting.DraftCombineSpotShooting(season_year = year).get_data_frames()[0]
+			s['DRAFT_CLASS'] = year
 			time.sleep(0.6)
-			n = draftcombinenonstationaryshooting.DraftCombineNonStationaryShooting(season_year = self.draft).get_data_frames()[0]
+			n = draftcombinenonstationaryshooting.DraftCombineNonStationaryShooting(season_year = year).get_data_frames()[0]
+			n['DRAFT_CLASS'] = year
 			# time.sleep(0.6)
 			measurements = pd.concat((measurements, m))
 			spotShooting = pd.concat((spotShooting, s))
 			nonStationaryShooting = pd.concat((nonStationaryShooting, n))
 
-		y = pc.pandasCleanup(measurements)
-		measurements = y.main()
-		draftPlayers = measurements[['PLAYER_ID', 'DRAFT_CLASS'] + self.measurementCols].sort_values(by='PLAYER_ID', ascending=False)
+		draftPlayers = measurements[['PLAYER_ID', 'DRAFT_CLASS'] + self.measurementCols].sort_values(by=['PLAYER_ID', 'DRAFT_CLASS'], ascending=False)
 		
-		spotShootingTrunc = spotShooting[['PLAYER_ID'] + self.spotShootingCols]
-		spotShootingTrunc = spotShootingTrunc[spotShootingTrunc[self.spotShootingCols].any(axis=1)].sort_values(by='PLAYER_ID', ascending=False)
+		spotShootingTrunc = spotShooting[['PLAYER_ID', 'DRAFT_CLASS'] + self.spotShootingCols]
+		spotShootingTrunc = spotShootingTrunc[spotShootingTrunc[self.spotShootingCols].any(axis=1)].sort_values(by=['PLAYER_ID', 'DRAFT_CLASS'], ascending=False)
 
-		nonStationaryShootingTrunc = nonStationaryShooting[['PLAYER_ID'] + self.nonStationaryShootingCols]
-		nonStationaryShootingTrunc = nonStationaryShootingTrunc[nonStationaryShootingTrunc[self.nonStationaryShootingCols].any(axis=1)].sort_values(by='PLAYER_ID', ascending=False)
+		nonStationaryShootingTrunc = nonStationaryShooting[['PLAYER_ID', 'DRAFT_CLASS'] + self.nonStationaryShootingCols]
+		nonStationaryShootingTrunc = nonStationaryShootingTrunc[nonStationaryShootingTrunc[self.nonStationaryShootingCols].any(axis=1)].sort_values(by=['PLAYER_ID', 'DRAFT_CLASS'], ascending=False)
 		
 		return draftPlayers, spotShootingTrunc, nonStationaryShootingTrunc
 
 	def merging(self, playersSum, draftPlayers, spotShootingTrunc, nonStationaryShootingTrunc):
-		df = pd.merge(nonStationaryShootingTrunc, spotShootingTrunc, on='PLAYER_ID', how='outer')
-		df = pd.merge(draftPlayers, df, on='PLAYER_ID', how='outer')
+		df = pd.merge(nonStationaryShootingTrunc, spotShootingTrunc, on=['PLAYER_ID', 'DRAFT_CLASS'], how='outer')
+		df = pd.merge(draftPlayers, df, on=['PLAYER_ID', 'DRAFT_CLASS'], how='outer')
 		df.loc[df['PLAYER_ID']==2006, 'PLAYER_ID'] = 1626204 # Correcting Larry Nance's PLAYER_ID
 		df = pd.merge(df, playersSum[['PLAYER_ID', 'DRAFT_CLASS', self.target]], on=['PLAYER_ID', 'DRAFT_CLASS'], how='left').sort_values(by= self.target, ascending=False)
 
@@ -198,6 +199,10 @@ if __name__ == '__main__':
 	draft = NBAPrep(jsonFile)
 	
 	measurements, spotShooting, nonStationaryShooting = draft.combine()
+
+	y = pc.pandasCleanup(measurements, draft.measurementColsFix)
+	measurements = y.main()
+	
 	players = draft.players()
 	df = draft.merging(players, measurements, spotShooting, nonStationaryShooting)
 	dfPlayers = df[['PLAYER_ID', 'FIRST_NAME', 'LAST_NAME']]
