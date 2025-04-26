@@ -2,8 +2,9 @@ import numpy as np
 import pandas as pd
 
 class pandasCleanup:
-	def __init__(self, df):
+	def __init__(self, df, cols):
 		self.df = df
+		self.cols = cols
 
 	def cleanBlank(self, col):
 		# replaces '' with None
@@ -21,8 +22,9 @@ class pandasCleanup:
 		self.df[col] = self.df[col].astype(newType)
 	
 	def main(self):
-		self.cleanBlank('WEIGHT')
-		self.newType('WEIGHT', 'float64')
+		for col in self.cols:
+			self.cleanBlank(col)
+			self.newType(col, 'float64')
 		self.consistentNull()
 		return self.df
 
