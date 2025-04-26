@@ -26,6 +26,7 @@ class NBAPrep:
 
 		self.draft = inputs['draftYear']
 		self.dropCols = inputs['dropCols']
+		self.joinCols = inputs['joinCols']
 		self.measurementCols = inputs['measurementCols']
 		self.measurementColsFix = inputs['measurementColsFix']
 		self.nonStationaryShootingCols = inputs['nonStationaryShootingCols']
@@ -74,23 +75,22 @@ class NBAPrep:
 			spotShooting = pd.concat((spotShooting, s))
 			nonStationaryShooting = pd.concat((nonStationaryShooting, n))
 
-		draftPlayers = measurements[['PLAYER_ID', 'DRAFT_CLASS'] + self.measurementCols].sort_values(by=['PLAYER_ID', 'DRAFT_CLASS'], ascending=False)
+		draftPlayers = measurements[self.joinCols + self.measurementCols].sort_values(by=self.joinCols, ascending=False)
 		
-		spotShootingTrunc = spotShooting[['PLAYER_ID', 'DRAFT_CLASS'] + self.spotShootingCols]
-		spotShootingTrunc = spotShootingTrunc[spotShootingTrunc[self.spotShootingCols].any(axis=1)].sort_values(by=['PLAYER_ID', 'DRAFT_CLASS'], ascending=False)
+		spotShootingTrunc = spotShooting[self.joinCols + self.spotShootingCols]
+		spotShootingTrunc = spotShootingTrunc[spotShootingTrunc[self.spotShootingCols].any(axis=1)].sort_values(by=self.joinCols, ascending=False)
 
-		nonStationaryShootingTrunc = nonStationaryShooting[['PLAYER_ID', 'DRAFT_CLASS'] + self.nonStationaryShootingCols]
-		nonStationaryShootingTrunc = nonStationaryShootingTrunc[nonStationaryShootingTrunc[self.nonStationaryShootingCols].any(axis=1)].sort_values(by=['PLAYER_ID', 'DRAFT_CLASS'], ascending=False)
+		nonStationaryShootingTrunc = nonStationaryShooting[self.joinCols + self.nonStationaryShootingCols]
+		nonStationaryShootingTrunc = nonStationaryShootingTrunc[nonStationaryShootingTrunc[self.nonStationaryShootingCols].any(axis=1)].sort_values(by=self.joinCols, ascending=False)
 		
 		return draftPlayers, spotShootingTrunc, nonStationaryShootingTrunc
 
 	def merging(self, playersSum, draftPlayers, spotShootingTrunc, nonStationaryShootingTrunc):
-		df = pd.merge(nonStationaryShootingTrunc, spotShootingTrunc, on=['PLAYER_ID', 'DRAFT_CLASS'], how='outer')
-		df = pd.merge(draftPlayers, df, on=['PLAYER_ID', 'DRAFT_CLASS'], how='outer')
+		df = pd.merge(nonStationaryShootingTrunc, spotShootingTrunc, on=self.joinCols, how='outer')
+		df = pd.merge(draftPlayers, df, on=self.joinCols, how='outer')
 		df.loc[df['PLAYER_ID']==2006, 'PLAYER_ID'] = 1626204 # Correcting Larry Nance's PLAYER_ID
-		df = pd.merge(df, playersSum[['PLAYER_ID', 'DRAFT_CLASS', self.target]], on=['PLAYER_ID', 'DRAFT_CLASS'], how='left').sort_values(by= self.target, ascending=False)
+		df = pd.merge(df, playersSum[self.joinCols + [self.target]], on=self.joinCols, how='left').sort_values(by= self.target, ascending=False)
 
-		import pdb; pdb.set_trace()
 		df['MIN'] = df['MIN'].fillna(0)
 
 		df = df.dropna(how='all', axis=1)
