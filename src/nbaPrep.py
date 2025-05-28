@@ -1,3 +1,4 @@
+import argparse
 import json
 import lightgbm as lgb
 import matplotlib.pyplot as plt
@@ -24,19 +25,23 @@ class NBAPrep:
 		with open(jsonFile, "r") as f:
 			inputs = json.load(f)
 
+		self.dfPlayers = inputs['dfPlayers']
 		self.draft = inputs['draftYear']
 		self.dropCols = inputs['dropCols']
+		self.evalSplit = inputs['evalSplit']
 		self.joinCols = inputs['joinCols']
 		self.measurementCols = inputs['measurementCols']
 		self.measurementColsFix = inputs['measurementColsFix']
 		self.nonStationaryShootingCols = inputs['nonStationaryShootingCols']
 		self.spotShootingCols = inputs['spotShootingCols']
 		self.target = inputs['target']
-		self.testTrainSplit = inputs['testTrainSplit']
+		self.trainSplit = inputs['trainSplit']
+		self.testSplit = inputs['testSplit']
 		self.xgbParams = inputs['xgbParamsGridSearch'] 
 		self.years = inputs['seasons']
 	
 	def players(self):
+		# pulls total nba minutes played in 4-6 years after being drafted
 		playersSum = pd.DataFrame()
 		for i, draftClass in enumerate(self.years):
 			print('Pulling data for the following years: ' + str(draftClass))
@@ -75,6 +80,7 @@ class NBAPrep:
 			spotShooting = pd.concat((spotShooting, s))
 			nonStationaryShooting = pd.concat((nonStationaryShooting, n))
 
+		import pdb; pdb.set_trace()
 		draftPlayers = measurements[self.joinCols + self.measurementCols].sort_values(by=self.joinCols, ascending=False)
 		
 		spotShootingTrunc = spotShooting[self.joinCols + self.spotShootingCols]
@@ -97,7 +103,7 @@ class NBAPrep:
 
 		return df
 
-	def drop(self, df, dropCols):
+	def dropCols(self, df, dropCols):
 		# drop cols are selected from previous feature importance analyses
 		df = df.drop(dropCols, axis=1)
 
@@ -114,28 +120,45 @@ class NBAPrep:
 
 		return dfList
 
-	def splits(self, dfList, target, testTrainSplit):
-		X_trainList, X_testList = [], []
-		y_trainList, y_testList = [], []
+	def splits(self, dfList, target, trainSplit, evalSplit, testSplit):
+		trainSplit = trainSplit / (trainSplit + evalSplit + testSplit)
+		evalSplit = evalSplit / (trainSplit + evalSplit + testSplit)
+		testSplit = testSplit / (trainSplit + evalSplit + testSplit)
+
+		testSplitRelative = testSplit / (testSplit + evalSplit)
+
+		X_trainList, X_evalList, X_testList = [], [], []
+		y_trainList, y_evalList, y_testList = [], [], []
 		for df in dfList:
 			y = df[target]
 			X = df.drop(target, axis=1)
-			#corrMatrix = X.corr()
-			#axis_corr = sns.heatmap(
-			#corrMatrix,
-			#vmin=-1, vmax=1, center=0,
-			#cmap=sns.diverging_palette(50, 500, n=500),
-			#square=True
-			#)
+			self.featureCorrelation(X)
 
-			#plt.show()
-			X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=testTrainSplit, random_state=42)
+			X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=(1 - trainSplit), random_state=42)
+			X_eval, X_test, y_eval, y_test = train_test_split(X_temp, y_temp, test_size=(testSplitRelative), random_state=42)
 			X_trainList.append(X_train)
+			X_evalList.append(X_eval)
 			X_testList.append(X_test)
 			y_trainList.append(y_train)
+			y_evalList.append(y_eval)
 			y_testList.append(y_test)
 
-		return X_trainList, X_testList, y_trainList, y_testList
+		import pdb; pdb.set_trace()
+
+		return X_trainList, X_evalList, X_testList, y_trainList, y_evalList, y_testList
+
+	def featureCorrelation(self, X):
+		corrMatrix = X.corr()
+		axis_corr = sns.heatmap(
+		corrMatrix,
+		vmin=-1, vmax=1, center=0,
+		cmap=sns.diverging_palette(50, 500, n=500),
+		square=True
+		)
+
+		plt.show()
+		import pdb; pdb.set_trace()
+		
 
 	def featureImportance(self, X_train, y_train):
 
@@ -159,7 +182,8 @@ class NBAPrep:
 		#import pdb; pdb.set_trace()
 
 	def train(self, dfPlayers, X_trainList, y_trainList, X_testList, y_testList):
-		model = xgb.XGBRegressor()
+		model = xgb.XGBRegressor(tree_method='hist')
+		# model = xgb.XGBRegressor()
 		for i, position  in enumerate(['Guards', 'Forwards', 'Centers']):
 			print('Performing grid search on ' + position)
 			reg_cv = GridSearchCV(model, {
@@ -179,6 +203,7 @@ class NBAPrep:
 				})
 			print("Training gridsearch")
 			reg_cv.fit(X_trainList[i], y_trainList[i])
+			# reg_cv.fit(X_trainList[i], y_trainList[i], eval_set=[()
 			print(reg_cv.best_params_)
 			model = xgb.XGBRegressor(**reg_cv.best_params_)
 			model.fit(X_trainList[i], y_trainList[i])
@@ -193,9 +218,16 @@ class NBAPrep:
 			merged = merged.sort_values(by='predictions', ascending=False)
 
 if __name__ == '__main__':
+	parser = argparse.ArgumentParser(description='Train a model to predict NBA success from combine statistics',
+		formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+	parser.add_argument('-c', '--correlation', action='store_true', help='View feature correlation matrix')
+	parser.add_argument('-i', '--inputFile', help='Input JSON file', required=True)
+	args = parser.parse_args()
+	
 	pd.set_option('display.max_columns', None)
 	pd.set_option('display.max_rows', None)
-	jsonFile = 'src/inputs.json'
+
+	jsonFile = args.inputFile
 	draft = NBAPrep(jsonFile)
 	
 	measurements, spotShooting, nonStationaryShooting = draft.combine()
@@ -205,12 +237,15 @@ if __name__ == '__main__':
 	
 	players = draft.players()
 	df = draft.merging(players, measurements, spotShooting, nonStationaryShooting)
-	dfPlayers = df[['PLAYER_ID', 'FIRST_NAME', 'LAST_NAME']]
-	df = draft.drop(df, draft.dropCols)
+	#dfPlayers = df[['PLAYER_ID', 'FIRST_NAME', 'LAST_NAME']]
+	dfPlayers = df[draft.dfPlayers]
+	import pdb; pdb.set_trace()
+	df = draft.dropCols(df, draft.dropCols)
 	
 	dfList = draft.positions(df)
 
-	X_trainList, X_testList, y_trainList, y_testList = draft.splits(dfList, draft.target, draft.testTrainSplit)
+	# featureCorrelation = 
+	X_trainList, X_evalList, X_testList, y_trainList, y_evalSplit, y_testList = draft.splits(dfList, draft.target, draft.trainSplit, draft.evalSplit, draft.testSplit)
 	# draft.featureImportance(X_train, y_train)
 
 	draft.train(dfPlayers, X_trainList, y_trainList, X_testList, y_testList)
