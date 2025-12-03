@@ -30,6 +30,7 @@ class NBAPrep:
 		self.dropCols = inputs['dropCols']
 		self.evalSplit = inputs['evalSplit']
 		self.joinCols = inputs['joinCols']
+		self.manualPlayerID = inputs['manualPlayerID']
 		self.measurementCols = inputs['measurementCols']
 		self.measurementColsFix = inputs['measurementColsFix']
 		self.nonStationaryShootingCols = inputs['nonStationaryShootingCols']
@@ -69,37 +70,54 @@ class NBAPrep:
 			print('Pulling data for ' + str(year) + ' draft' )
 			m = draftcombinestats.DraftCombineStats(season_all_time = year).get_data_frames()[0]
 			m['DRAFT_CLASS'] = year
+			m = m[self.joinCols + self.measurementCols]
+			
 			time.sleep(0.6)
 			s = draftcombinespotshooting.DraftCombineSpotShooting(season_year = year).get_data_frames()[0]
 			s['DRAFT_CLASS'] = year
+			s[self.spotShootingCols]=s[self.spotShootingCols].astype(float)
+			s = s[self.joinCols + self.spotShootingCols]
+			
 			time.sleep(0.6)
 			n = draftcombinenonstationaryshooting.DraftCombineNonStationaryShooting(season_year = year).get_data_frames()[0]
 			n['DRAFT_CLASS'] = year
+			n[self.nonStationaryShootingCols]=n[self.nonStationaryShootingCols].astype(float)
+			n = n[self.joinCols + self.nonStationaryShootingCols]
+
 			# time.sleep(0.6)
 			measurements = pd.concat((measurements, m))
 			spotShooting = pd.concat((spotShooting, s))
 			nonStationaryShooting = pd.concat((nonStationaryShooting, n))
 
+		draftPlayers = measurements.sort_values(by=self.joinCols, ascending=False)
+		spotShootingTrunc = spotShooting[spotShooting[self.spotShootingCols].any(axis=1)].sort_values(by=self.joinCols, ascending=False)
+		nonStationaryShootingTrunc = nonStationaryShooting[nonStationaryShooting[self.nonStationaryShootingCols].any(axis=1)].sort_values(by=self.joinCols, ascending=False)
 		import pdb; pdb.set_trace()
-		draftPlayers = measurements[self.joinCols + self.measurementCols].sort_values(by=self.joinCols, ascending=False)
-		
-		spotShootingTrunc = spotShooting[self.joinCols + self.spotShootingCols]
-		spotShootingTrunc = spotShootingTrunc[spotShootingTrunc[self.spotShootingCols].any(axis=1)].sort_values(by=self.joinCols, ascending=False)
-
-		nonStationaryShootingTrunc = nonStationaryShooting[self.joinCols + self.nonStationaryShootingCols]
-		nonStationaryShootingTrunc = nonStationaryShootingTrunc[nonStationaryShootingTrunc[self.nonStationaryShootingCols].any(axis=1)].sort_values(by=self.joinCols, ascending=False)
 		
 		return draftPlayers, spotShootingTrunc, nonStationaryShootingTrunc
+
+	def manualMatch(self, df, manualPlayerID):
+		# Manually matches inconsistencies in PLAYER_ID
+		
+		fix_dict = manualPlayerID
+
+		for final, inconsistency in fix_dict.items():
+			for i in inconsistency:
+				df.loc[df['PLAYER_ID'] == i, 'PLAYER_ID'] = int(final)				
+
+		return df
 
 	def merging(self, playersSum, draftPlayers, spotShootingTrunc, nonStationaryShootingTrunc):
 		df = pd.merge(nonStationaryShootingTrunc, spotShootingTrunc, on=self.joinCols, how='outer')
 		df = pd.merge(draftPlayers, df, on=self.joinCols, how='outer')
-		df.loc[df['PLAYER_ID']==2006, 'PLAYER_ID'] = 1626204 # Correcting Larry Nance's PLAYER_ID
+		df = self.manualMatch(df, self.manualPlayerID)
 		df = pd.merge(df, playersSum[self.joinCols + [self.target]], on=self.joinCols, how='left').sort_values(by= self.target, ascending=False)
 
 		df['MIN'] = df['MIN'].fillna(0)
 
 		df = df.dropna(how='all', axis=1)
+		df = df.sort_values(by=['PLAYER_ID', 'DRAFT_CLASS'])
+		df = df.drop_duplicates(subset=['PLAYER_ID'], keep='last')
 
 		return df
 
@@ -216,36 +234,3 @@ class NBAPrep:
 			merged = dfPlayers.merge(test, how='inner', left_index=True, right_index=True)
 			merged['absDiff'] = abs(merged['y_test'] - merged['predictions'])
 			merged = merged.sort_values(by='predictions', ascending=False)
-
-if __name__ == '__main__':
-	parser = argparse.ArgumentParser(description='Train a model to predict NBA success from combine statistics',
-		formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-	parser.add_argument('-c', '--correlation', action='store_true', help='View feature correlation matrix')
-	parser.add_argument('-i', '--inputFile', help='Input JSON file', required=True)
-	args = parser.parse_args()
-	
-	pd.set_option('display.max_columns', None)
-	pd.set_option('display.max_rows', None)
-
-	jsonFile = args.inputFile
-	draft = NBAPrep(jsonFile)
-	
-	measurements, spotShooting, nonStationaryShooting = draft.combine()
-
-	y = pc.pandasCleanup(measurements, draft.measurementColsFix)
-	measurements = y.main()
-	
-	players = draft.players()
-	df = draft.merging(players, measurements, spotShooting, nonStationaryShooting)
-	#dfPlayers = df[['PLAYER_ID', 'FIRST_NAME', 'LAST_NAME']]
-	dfPlayers = df[draft.dfPlayers]
-	import pdb; pdb.set_trace()
-	df = draft.dropCols(df, draft.dropCols)
-	
-	dfList = draft.positions(df)
-
-	# featureCorrelation = 
-	X_trainList, X_evalList, X_testList, y_trainList, y_evalSplit, y_testList = draft.splits(dfList, draft.target, draft.trainSplit, draft.evalSplit, draft.testSplit)
-	# draft.featureImportance(X_train, y_train)
-
-	draft.train(dfPlayers, X_trainList, y_trainList, X_testList, y_testList)
