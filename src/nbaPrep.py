@@ -53,7 +53,7 @@ class NBAPrep:
 					season = year,
 					season_type_all_star='Regular Season',
 					stat_category_abbreviation='MIN'
-					,per_mode48='Totals'
+					,per_mode48='PerGame'
 				).get_data_frames()[0]
 				players = pd.concat((players, stats)) 
 			players = players.groupby(by=['PLAYER_ID', 'PLAYER'], as_index=False).sum()
@@ -92,7 +92,6 @@ class NBAPrep:
 		draftPlayers = measurements.sort_values(by=self.joinCols, ascending=False)
 		spotShootingTrunc = spotShooting[spotShooting[self.spotShootingCols].any(axis=1)].sort_values(by=self.joinCols, ascending=False)
 		nonStationaryShootingTrunc = nonStationaryShooting[nonStationaryShooting[self.nonStationaryShootingCols].any(axis=1)].sort_values(by=self.joinCols, ascending=False)
-		import pdb; pdb.set_trace()
 		
 		return draftPlayers, spotShootingTrunc, nonStationaryShootingTrunc
 
@@ -121,9 +120,9 @@ class NBAPrep:
 
 		return df
 
-	def dropCols(self, df, dropCols):
+	def dropColumns(self, df, dropCols):
 		# drop cols are selected from previous feature importance analyses
-		df = df.drop(dropCols, axis=1)
+		df = df.drop(columns=dropCols, axis=1)
 
 		return df
 
@@ -137,47 +136,7 @@ class NBAPrep:
 		dfList = [df_1, df_2, df_3]
 
 		return dfList
-
-	def splits(self, dfList, target, trainSplit, evalSplit, testSplit):
-		trainSplit = trainSplit / (trainSplit + evalSplit + testSplit)
-		evalSplit = evalSplit / (trainSplit + evalSplit + testSplit)
-		testSplit = testSplit / (trainSplit + evalSplit + testSplit)
-
-		testSplitRelative = testSplit / (testSplit + evalSplit)
-
-		X_trainList, X_evalList, X_testList = [], [], []
-		y_trainList, y_evalList, y_testList = [], [], []
-		for df in dfList:
-			y = df[target]
-			X = df.drop(target, axis=1)
-			self.featureCorrelation(X)
-
-			X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=(1 - trainSplit), random_state=42)
-			X_eval, X_test, y_eval, y_test = train_test_split(X_temp, y_temp, test_size=(testSplitRelative), random_state=42)
-			X_trainList.append(X_train)
-			X_evalList.append(X_eval)
-			X_testList.append(X_test)
-			y_trainList.append(y_train)
-			y_evalList.append(y_eval)
-			y_testList.append(y_test)
-
-		import pdb; pdb.set_trace()
-
-		return X_trainList, X_evalList, X_testList, y_trainList, y_evalList, y_testList
-
-	def featureCorrelation(self, X):
-		corrMatrix = X.corr()
-		axis_corr = sns.heatmap(
-		corrMatrix,
-		vmin=-1, vmax=1, center=0,
-		cmap=sns.diverging_palette(50, 500, n=500),
-		square=True
-		)
-
-		plt.show()
-		import pdb; pdb.set_trace()
-		
-
+'''
 	def featureImportance(self, X_train, y_train):
 
 		xgb_regressor = xgb.XGBRegressor(random_state=42)
@@ -234,3 +193,4 @@ class NBAPrep:
 			merged = dfPlayers.merge(test, how='inner', left_index=True, right_index=True)
 			merged['absDiff'] = abs(merged['y_test'] - merged['predictions'])
 			merged = merged.sort_values(by='predictions', ascending=False)
+'''

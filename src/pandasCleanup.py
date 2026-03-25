@@ -28,3 +28,6 @@ class pandasCleanup:
 		self.consistentNull()
 		return self.df
 
+class saveFile:
+	def to_csv(df, location):
+		df.to_csv(location, index=False)
