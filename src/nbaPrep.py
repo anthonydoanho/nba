@@ -1,14 +1,18 @@
+import argparse
 import json
+import lightgbm as lgb
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
+import time
+import xgboost as xgb
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from sklearn.model_selection import train_test_split, GridSearchCV
-import xgboost as xgb
-import lightgbm as lgb
-import time
+
+import pandasCleanup as pc
 
 from nba_api.stats.endpoints import draftcombinespotshooting 
 from nba_api.stats.endpoints import draftcombinenonstationaryshooting 
@@ -21,17 +25,24 @@ class NBAPrep:
 		with open(jsonFile, "r") as f:
 			inputs = json.load(f)
 
-		self.target = inputs['target']
+		self.dfPlayers = inputs['dfPlayers']
 		self.draft = inputs['draftYear']
-		self.years = inputs['seasons']
-		self.measurementCols = inputs['measurementCols']
-		self.spotShootingCols = inputs['spotShootingCols']
-		self.nonStationaryShootingCols = inputs['nonStationaryShootingCols']
 		self.dropCols = inputs['dropCols']
-		self.testTrainSplit = inputs['testTrainSplit']
+		self.evalSplit = inputs['evalSplit']
+		self.joinCols = inputs['joinCols']
+		self.manualPlayerID = inputs['manualPlayerID']
+		self.measurementCols = inputs['measurementCols']
+		self.measurementColsFix = inputs['measurementColsFix']
+		self.nonStationaryShootingCols = inputs['nonStationaryShootingCols']
+		self.spotShootingCols = inputs['spotShootingCols']
+		self.target = inputs['target']
+		self.trainSplit = inputs['trainSplit']
+		self.testSplit = inputs['testSplit']
 		self.xgbParams = inputs['xgbParamsGridSearch'] 
+		self.years = inputs['seasons']
 	
 	def players(self):
+		# pulls total nba minutes played in 4-6 years after being drafted
 		playersSum = pd.DataFrame()
 		for i, draftClass in enumerate(self.years):
 			print('Pulling data for the following years: ' + str(draftClass))
@@ -42,10 +53,10 @@ class NBAPrep:
 					season = year,
 					season_type_all_star='Regular Season',
 					stat_category_abbreviation='MIN'
-					,per_mode48='Totals'
+					,per_mode48='PerGame'
 				).get_data_frames()[0]
 				players = pd.concat((players, stats)) 
-			players = players.groupby(by='PLAYER_ID', as_index=False).sum()
+			players = players.groupby(by=['PLAYER_ID', 'PLAYER'], as_index=False).sum()
 			players['DRAFT_CLASS'] = self.draft[i]
 			playersSum = pd.concat((playersSum, players))
 		
@@ -59,61 +70,73 @@ class NBAPrep:
 			print('Pulling data for ' + str(year) + ' draft' )
 			m = draftcombinestats.DraftCombineStats(season_all_time = year).get_data_frames()[0]
 			m['DRAFT_CLASS'] = year
+			m = m[self.joinCols + self.measurementCols]
+			
 			time.sleep(0.6)
 			s = draftcombinespotshooting.DraftCombineSpotShooting(season_year = year).get_data_frames()[0]
+			s['DRAFT_CLASS'] = year
+			s[self.spotShootingCols]=s[self.spotShootingCols].astype(float)
+			s = s[self.joinCols + self.spotShootingCols]
+			
 			time.sleep(0.6)
-			n = draftcombinenonstationaryshooting.DraftCombineNonStationaryShooting(season_year = self.draft).get_data_frames()[0]
-			time.sleep(0.6)
+			n = draftcombinenonstationaryshooting.DraftCombineNonStationaryShooting(season_year = year).get_data_frames()[0]
+			n['DRAFT_CLASS'] = year
+			n[self.nonStationaryShootingCols]=n[self.nonStationaryShootingCols].astype(float)
+			n = n[self.joinCols + self.nonStationaryShootingCols]
+
+			# time.sleep(0.6)
 			measurements = pd.concat((measurements, m))
 			spotShooting = pd.concat((spotShooting, s))
 			nonStationaryShooting = pd.concat((nonStationaryShooting, n))
 
-		measurements = measurements[measurements['WEIGHT'] != ''] # weight is not blank
-		measurements['WEIGHT'] = measurements['WEIGHT'].astype(float)
-		draftPlayers = measurements[['PLAYER_ID', 'DRAFT_CLASS'] + self.measurementCols].sort_values(by='PLAYER_ID', ascending=False)
-		
-		spotShootingTrunc = spotShooting[['PLAYER_ID'] + self.spotShootingCols]
-		spotShootingTrunc = spotShootingTrunc[spotShootingTrunc[self.spotShootingCols].any(axis=1)].sort_values(by='PLAYER_ID', ascending=False)
-
-		nonStationaryShootingTrunc = nonStationaryShooting[['PLAYER_ID'] + self.nonStationaryShootingCols]
-		nonStationaryShootingTrunc = nonStationaryShootingTrunc[nonStationaryShootingTrunc[self.nonStationaryShootingCols].any(axis=1)].sort_values(by='PLAYER_ID', ascending=False)
+		draftPlayers = measurements.sort_values(by=self.joinCols, ascending=False)
+		spotShootingTrunc = spotShooting[spotShooting[self.spotShootingCols].any(axis=1)].sort_values(by=self.joinCols, ascending=False)
+		nonStationaryShootingTrunc = nonStationaryShooting[nonStationaryShooting[self.nonStationaryShootingCols].any(axis=1)].sort_values(by=self.joinCols, ascending=False)
 		
 		return draftPlayers, spotShootingTrunc, nonStationaryShootingTrunc
 
+	def manualMatch(self, df, manualPlayerID):
+		# Manually matches inconsistencies in PLAYER_ID
+		
+		fix_dict = manualPlayerID
+
+		for final, inconsistency in fix_dict.items():
+			for i in inconsistency:
+				df.loc[df['PLAYER_ID'] == i, 'PLAYER_ID'] = int(final)				
+
+		return df
+
 	def merging(self, playersSum, draftPlayers, spotShootingTrunc, nonStationaryShootingTrunc):
-		df = pd.merge(nonStationaryShootingTrunc, spotShootingTrunc, on='PLAYER_ID', how='outer')
-		df = pd.merge(draftPlayers, df, on='PLAYER_ID', how='outer')
-		df.loc[df['PLAYER_ID']==2006, 'PLAYER_ID'] = 1626204 # Correcting Larry Nance's PLAYER_ID
-		df = pd.merge(df, playersSum[['PLAYER_ID', 'DRAFT_CLASS', self.target]], on=['PLAYER_ID', 'DRAFT_CLASS'], how='left').sort_values(by= self.target, ascending=False)
+		df = pd.merge(nonStationaryShootingTrunc, spotShootingTrunc, on=self.joinCols, how='outer')
+		df = pd.merge(draftPlayers, df, on=self.joinCols, how='outer')
+		df = self.manualMatch(df, self.manualPlayerID)
+		df = pd.merge(df, playersSum[self.joinCols + [self.target]], on=self.joinCols, how='left').sort_values(by= self.target, ascending=False)
 
 		df['MIN'] = df['MIN'].fillna(0)
 
 		df = df.dropna(how='all', axis=1)
+		df = df.sort_values(by=['PLAYER_ID', 'DRAFT_CLASS'])
+		df = df.drop_duplicates(subset=['PLAYER_ID'], keep='last')
 
 		return df
 
-	def drop(self, df, dropCols):
+	def dropColumns(self, df, dropCols):
 		# drop cols are selected from previous feature importance analyses
-		df = df.drop(dropCols, axis=1)
+		df = df.drop(columns=dropCols, axis=1)
 
 		return df
 
-	def splits(self, df, target, testTrainSplit):
-		y = df[target]
-		X = df.drop(target, axis=1)
-		#corrMatrix = X.corr()
-		#axis_corr = sns.heatmap(
-		#corrMatrix,
-		#vmin=-1, vmax=1, center=0,
-		#cmap=sns.diverging_palette(50, 500, n=500),
-		#square=True
-		#)
+	def positions(self, df):
+		# split players based on 'HEIGHT_W_SHOES'
+		
+		df_1 = df[df['HEIGHT_W_SHOES'] < 78]
+		df_2 = df[(df['HEIGHT_W_SHOES'] >= 78) & (df['HEIGHT_W_SHOES'] < 82)]
+		df_3 = df[df['HEIGHT_W_SHOES'] >= 82]
 
-		#plt.show()
-		X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=testTrainSplit, random_state=42)
+		dfList = [df_1, df_2, df_3]
 
-		return X_train, X_test, y_train, y_test
-
+		return dfList
+'''
 	def featureImportance(self, X_train, y_train):
 
 		xgb_regressor = xgb.XGBRegressor(random_state=42)
@@ -135,51 +158,39 @@ class NBAPrep:
 		#print(lgb_feature_importance_df)
 		#import pdb; pdb.set_trace()
 
-	def train(self, dfPlayers, X_train, y_train, X_test, y_test):
-		model = xgb.XGBRegressor()
-		print('Performing grid search')
-		reg_cv = GridSearchCV(model, {
-			'eta':self.xgbParams['params']['eta'],
-			'colsample_bytree':self.xgbParams['params']['colsample_bytree'], 
-			'gamma':self.xgbParams['params']['gamma'],
-			'max_depth':self.xgbParams['params']['max_depth'],
-			'min_child_weight':self.xgbParams['params']['min_child_weight'], 
-			'n_estimators':self.xgbParams['params']['n_estimators'],
-			'nthread':self.xgbParams['params']['nthread'],
-			'objective':self.xgbParams['params']['objective'],
-			'reg_alpha':self.xgbParams['params']['reg_alpha'],
-			'reg_lambda':self.xgbParams['params']['reg_lambda'],
-			'scale_pos_weight':self.xgbParams['params']['scale_pos_weight'],
-			'subsample':self.xgbParams['params']['subsample'],
-			'seed':self.xgbParams['params']['seed'],
-			})
-		print("Training gridsearch")
-		reg_cv.fit(X_train, y_train)
-		print(reg_cv.best_params_)
-		model = xgb.XGBRegressor(**reg_cv.best_params_)
-		model.fit(X_train, y_train)
-		predictions = model.predict(X_test)
-		print("Predicting")
-		mse = mean_squared_error(y_test, predictions)
-		mae = mean_absolute_error(y_test, predictions)
-		print('mse: ' + str(mse) + ', mae: ' + str(mae))
-		test = pd.DataFrame({'y_test':y_test, 'predictions':predictions})
-		merged = dfPlayers.merge(test, how='inner', left_index=True, right_index=True)
-		merged['absDiff'] = abs(merged['y_test'] - merged['predictions'])
-		merged = merged.sort_values(by='predictions', ascending=False)
-		import pdb; pdb.set_trace()
-
-if __name__ == '__main__':
-	jsonFile = 'src/inputs.json'
-	draft = NBAPrep(jsonFile)
-	
-	measurements, spotShooting, nonStationaryShooting = draft.combine()
-	players = draft.players()
-	df = draft.merging(players, measurements, spotShooting, nonStationaryShooting)
-	dfPlayers = df[['PLAYER_ID', 'FIRST_NAME', 'LAST_NAME']]
-	df = draft.drop(df, draft.dropCols)
-	
-	X_train, X_test, y_train, y_test = draft.splits(df, draft.target, draft.testTrainSplit)
-	# draft.featureImportance(X_train, y_train)
-
-	draft.train(dfPlayers, X_train, y_train, X_test, y_test)
+	def train(self, dfPlayers, X_trainList, y_trainList, X_testList, y_testList):
+		model = xgb.XGBRegressor(tree_method='hist')
+		# model = xgb.XGBRegressor()
+		for i, position  in enumerate(['Guards', 'Forwards', 'Centers']):
+			print('Performing grid search on ' + position)
+			reg_cv = GridSearchCV(model, {
+				'eta':self.xgbParams['params' + position]['eta'],
+				'colsample_bytree':self.xgbParams['params' + position]['colsample_bytree'], 
+				'gamma':self.xgbParams['params' + position]['gamma'],
+				'max_depth':self.xgbParams['params' + position]['max_depth'],
+				'min_child_weight':self.xgbParams['params' + position]['min_child_weight'], 
+				'n_estimators':self.xgbParams['params' + position]['n_estimators'],
+				'nthread':self.xgbParams['params' + position]['nthread'],
+				'objective':self.xgbParams['params' + position]['objective'],
+				'reg_alpha':self.xgbParams['params' + position]['reg_alpha'],
+				'reg_lambda':self.xgbParams['params' + position]['reg_lambda'],
+				'scale_pos_weight':self.xgbParams['params' + position]['scale_pos_weight'],
+				'subsample':self.xgbParams['params' + position]['subsample'],
+				'seed':self.xgbParams['params' + position]['seed'],
+				})
+			print("Training gridsearch")
+			reg_cv.fit(X_trainList[i], y_trainList[i])
+			# reg_cv.fit(X_trainList[i], y_trainList[i], eval_set=[()
+			print(reg_cv.best_params_)
+			model = xgb.XGBRegressor(**reg_cv.best_params_)
+			model.fit(X_trainList[i], y_trainList[i])
+			predictions = model.predict(X_testList[i])
+			print("Predicting " + position)
+			mse = mean_squared_error(y_testList[i], predictions)
+			mae = mean_absolute_error(y_testList[i], predictions)
+			print('mse: ' + str(mse) + ', mae: ' + str(mae))
+			test = pd.DataFrame({'y_test':y_testList[i], 'predictions':predictions})
+			merged = dfPlayers.merge(test, how='inner', left_index=True, right_index=True)
+			merged['absDiff'] = abs(merged['y_test'] - merged['predictions'])
+			merged = merged.sort_values(by='predictions', ascending=False)
+'''

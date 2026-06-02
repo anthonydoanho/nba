@@ -1,5 +1,6 @@
 lightgbm
 matplotlib
+mplcursors
 nba_api
 pandas
 scikit-learn
